@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import "./ChatInterface.css"
+import "./ChatInterface.css";
 
 const API_KEY = 'wys_YMaL6zUeqo1JTogaaPEO1X9cSnzNdW3wNNZG';
 const API_BASE_URL = 'https://ad6eac20e88649a6a1af3eed83e2b50e.weavy.io/api';
@@ -26,6 +26,12 @@ const userData = [
     "display_name": "Sri Singh",
     "directory_id": 1,
     "created_at": "2024-09-13T06:19:45.9466667Z"
+  },  {
+    "id": 4,
+    "uid": "sashi",
+    "display_name": "Sashi Singh",
+    "directory_id": 1,
+    "created_at": "2024-09-13T06:19:45.9466667Z"
   }
 ];
 
@@ -34,73 +40,143 @@ const ChatInterface = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const currentUser = userData[0]; // Set Harry as the current user
+  const [currentUser, setCurrentUser] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    setUsers(userData.filter(user => user.id !== currentUser.id));
-  }, [currentUser.id]);
+    setUsers(userData.filter(user => user.uid !== 'harry'));
+    setCurrentUser(userData.find(user => user.uid === 'harry'));
+  }, []);
 
-  const handleUserSelect = (event) => {
-    const selected = users.find(user => user.id === parseInt(event.target.value));
-    setSelectedUser(selected);
-    if (selected) {
-      fetchMessages();
-    }
-  };
-
-  const fetchMessages = async () => {
+  const checkIfAppExists = async (appUid) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/apps/demo-chat-app/messages`, {
+      const response = await fetch(`${API_BASE_URL}/apps/${appUid}`, {
         headers: {
           'Authorization': `Bearer ${API_KEY}`
         }
       });
+      return response.ok;
+    } catch (error) {
+      console.error('Error checking if app exists:', error);
+      return false;
+    }
+  };
+
+  const createChatApp = async (currentUserUid, selectedUserUid) => {
+    const appUid = `chat-${currentUserUid}-${selectedUserUid}`;
+    console.log(`Checking if chat app exists: ${appUid}`);
+
+    const appExists = await checkIfAppExists(appUid);
+    if (appExists) {
+      console.log(`Chat app ${appUid} already exists. Skipping creation.`);
+      return { uid: appUid };
+    }
+
+    console.log(`Creating chat app: ${appUid}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}/apps`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uid: appUid,
+          type: 'chat',
+          display_name: `Chat between ${currentUserUid} and ${selectedUserUid}`,
+          access: 'write'
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('Chat app created:', data);
+      return data;
+    } catch (error) {
+      console.error('Error creating chat app:', error);
+      setError('Failed to create chat app. Please try again.');
+      throw error;
+    }
+  };
+
+  const handleUserSelect = async (user) => {
+    setSelectedUser(user);
+    setError(null);
+    const appUid = `chat-${currentUser.uid}-${user.uid}`;
+    console.log(`Selected user: ${user.display_name}, AppUID: ${appUid}`);
+    
+    try {
+      // First, try to create the chat app or get existing one
+      await createChatApp(currentUser.uid, user.uid);
+      // If successful, fetch messages
+      await fetchMessages(appUid);
+    } catch (error) {
+      console.error('Error in handleUserSelect:', error);
+      setError('Failed to initialize chat. Please try again.');
+    }
+  };
+
+  const fetchMessages = async (appUid) => {
+    console.log(`Fetching messages for app: ${appUid}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}/apps/${appUid}/messages`, {
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log('Fetched messages:', data);
       setMessages(data.data || []);
     } catch (error) {
       console.error('Error fetching messages:', error);
+      setError('Failed to fetch messages. Please try again.');
       setMessages([]);
     }
   };
 
   const handleSendMessage = async () => {
     if (newMessage.trim() && selectedUser) {
+      const appUid = `chat-${currentUser.uid}-${selectedUser.uid}`;
+      console.log(`Sending message to app: ${appUid}`);
       try {
-        const response = await fetch(`${API_BASE_URL}/apps/demo-chat-app/messages`, {
+        const response = await fetch(`${API_BASE_URL}/apps/${appUid}/messages`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${API_KEY}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            uid: `msg-${Date.now()}`,
-            type: 'chat_message',
             text: newMessage,
-            metadata: JSON.stringify({
-              senderId: currentUser.id,
-              receiverId: selectedUser.id
-            })
           })
         });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
+        console.log('Message sent:', data);
         setMessages(prevMessages => [...prevMessages, data]);
         setNewMessage('');
-        fetchMessages();
       } catch (error) {
         console.error('Error sending message:', error);
+        setError('Failed to send message. Please try again.');
       }
     }
   };
 
   const renderMessage = (message) => {
-    const isCurrentUser = message.created_by?.id === currentUser.id;
+    const isCurrentUser = message.created_by?.uid === currentUser.uid;
     return (
       <div 
-        key={message.id || message.uid} 
-        className={`message-container ${isCurrentUser ? 'sent' : 'received'}`}
+        key={message.id} 
+        className={`message ${isCurrentUser ? 'sent' : 'received'}`}
       >
-        <div className="message-bubble">
-          {message.text}
+        <div className="message-content">
+          <p>{message.text}</p>
+          <span className="timestamp">{new Date(message.created_at).toLocaleTimeString()}</span>
         </div>
       </div>
     );
@@ -108,41 +184,49 @@ const ChatInterface = () => {
 
   return (
     <div className="chat-interface">
-      <div className="current-user">
-        Logged in as: {currentUser.display_name}
-      </div>
-      <div className="user-select">
-        <select onChange={handleUserSelect}>
-          <option value="">Select a user to chat with</option>
-          {users.map(user => (
-            <option key={user.id} value={user.id}>
-              {user.display_name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {selectedUser && (
-        <div className="chat-window">
-          <h2>Chat with {selectedUser.display_name}</h2>
-          <div className="messages">
-            {messages && messages.length > 0 ? (
-              messages.map(renderMessage)
-            ) : (
-              <p>No messages yet.</p>
-            )}
+      <div className="user-list">
+        <h2>Users</h2>
+        {users.map(user => (
+          <div 
+            key={user.id} 
+            className={`user-item ${selectedUser && selectedUser.id === user.id ? 'active' : ''}`}
+            onClick={() => handleUserSelect(user)}
+          >
+            {user.display_name}
           </div>
-          <div className="message-input">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-            />
-            <button onClick={handleSendMessage}>Send</button>
+        ))}
+      </div>
+      <div className="chat-area">
+        {selectedUser ? (
+          <>
+            <div className="chat-header">
+              <h2>Chat with {selectedUser.display_name}</h2>
+            </div>
+            <div className="messages">
+              {error && <p className="error-message">{error}</p>}
+              {messages.length > 0 ? (
+                messages.map(renderMessage)
+              ) : (
+                <p className="no-messages">No messages yet.</p>
+              )}
+            </div>
+            <div className="message-input">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message..."
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              />
+              <button onClick={handleSendMessage}>Send</button>
+            </div>
+          </>
+        ) : (
+          <div className="no-chat-selected">
+            <p>Select a user to start chatting</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
