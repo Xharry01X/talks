@@ -26,7 +26,8 @@ const userData = [
     "display_name": "Sri Singh",
     "directory_id": 1,
     "created_at": "2024-09-13T06:19:45.9466667Z"
-  },  {
+  },
+  {
     "id": 4,
     "uid": "sashi",
     "display_name": "Sashi Singh",
@@ -107,9 +108,7 @@ const ChatInterface = () => {
     console.log(`Selected user: ${user.display_name}, AppUID: ${appUid}`);
     
     try {
-      // First, try to create the chat app or get existing one
       await createChatApp(currentUser.uid, user.uid);
-      // If successful, fetch messages
       await fetchMessages(appUid);
     } catch (error) {
       console.error('Error in handleUserSelect:', error);
@@ -151,6 +150,7 @@ const ChatInterface = () => {
           },
           body: JSON.stringify({
             text: newMessage,
+            metadata: { sender_id: currentUser.uid },
           })
         });
         if (!response.ok) {
@@ -168,13 +168,15 @@ const ChatInterface = () => {
   };
 
   const renderMessage = (message) => {
-    const isCurrentUser = message.created_by?.uid === currentUser.uid;
+    const isCurrentUser = message.metadata?.sender_id === currentUser.uid;
+    const senderName = isCurrentUser ? currentUser.display_name : selectedUser.display_name;
     return (
       <div 
         key={message.id} 
         className={`message ${isCurrentUser ? 'sent' : 'received'}`}
       >
         <div className="message-content">
+          <p className="sender-name">{senderName}</p>
           <p>{message.text}</p>
           <span className="timestamp">{new Date(message.created_at).toLocaleTimeString()}</span>
         </div>
@@ -202,7 +204,7 @@ const ChatInterface = () => {
             <div className="chat-header">
               <h2>Chat with {selectedUser.display_name}</h2>
             </div>
-            <div className="messages">
+            <div className="messages-container">
               {error && <p className="error-message">{error}</p>}
               {messages.length > 0 ? (
                 messages.map(renderMessage)
